@@ -329,3 +329,32 @@ def plot_tripod_leakage(
     )
     ax.legend()
     return ax
+
+def plot_mw_pulses(SIMULATION_TIME, mw_minus_pulse, mw_zero_pulse, mw_plus_pulse):
+
+    fig, axes = plt.subplots(3, 3, figsize=(12, 6), sharex=True)
+    axes[0, 0].plot(SIMULATION_TIME, np.abs(mw_minus_pulse), alpha=0.4, color='green', label='mw pulse magnitude')
+    axes[1, 0].plot(SIMULATION_TIME, np.abs(mw_zero_pulse), alpha=0.4, color='green', label='mw pulse magnitude')
+    axes[2, 0].plot(SIMULATION_TIME, np.abs(mw_plus_pulse), alpha=0.4, color='green', label='mw pulse magnitude')
+
+    axes[0, 1].plot(SIMULATION_TIME, mw_minus_pulse.real, alpha=0.4, color='red', label='mw pulse real')
+    axes[1, 1].plot(SIMULATION_TIME, mw_zero_pulse.real, alpha=0.4, color='red', label='mw pulse real')
+    axes[2, 1].plot(SIMULATION_TIME, mw_plus_pulse.real, alpha=0.4, color='red', label='mw pulse real')
+
+    axes[0, 2].plot(SIMULATION_TIME, mw_minus_pulse.imag, alpha=0.4, color='blue', label='mw pulse imag')
+    axes[1, 2].plot(SIMULATION_TIME, mw_zero_pulse.imag, alpha=0.4, color='blue', label='mw pulse imag')
+    axes[2, 2].plot(SIMULATION_TIME, mw_plus_pulse.imag, alpha=0.4, color='blue', label='mw pulse imag')
+
+    axes[0, 0].legend(loc='right', bbox_to_anchor=(1.5, 1))
+    axes[0, 1].legend(loc='right', bbox_to_anchor=(1.5, 1))
+    axes[0, 2].legend(loc='right', bbox_to_anchor=(1.5, 1))
+
+    axes[1, 0].legend(loc='right', bbox_to_anchor=(1.5, 1))
+    axes[1, 1].legend(loc='right', bbox_to_anchor=(1.5, 1))
+    axes[1, 2].legend(loc='right', bbox_to_anchor=(1.5, 1))
+
+    axes[2, 0].legend(loc='right', bbox_to_anchor=(1.5, 1))
+    axes[2, 1].legend(loc='right', bbox_to_anchor=(1.5, 1))
+    axes[2, 2].legend(loc='right', bbox_to_anchor=(1.5, 1))
+
+    return (fig, axes)
