@@ -1,3 +1,6 @@
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -330,7 +333,14 @@ def plot_tripod_leakage(
     ax.legend()
     return ax
 
-def plot_mw_pulses(SIMULATION_TIME, mw_minus_pulse, mw_zero_pulse, mw_plus_pulse):
+def plot_mw_pulses(
+    SIMULATION_TIME,
+    mw_minus_pulse,
+    mw_zero_pulse,
+    mw_plus_pulse,
+    loop_label="C1->C2",
+):
+    """Plot magnitude and complex quadratures for the three MW tripod legs."""
 
     fig, axes = plt.subplots(3, 3, figsize=(12, 6), sharex=True)
     axes[0, 0].plot(SIMULATION_TIME, np.abs(mw_minus_pulse), alpha=0.4, color='green', label='mw pulse magnitude')
@@ -357,4 +367,277 @@ def plot_mw_pulses(SIMULATION_TIME, mw_minus_pulse, mw_zero_pulse, mw_plus_pulse
     axes[2, 1].legend(loc='right', bbox_to_anchor=(1.5, 1))
     axes[2, 2].legend(loc='right', bbox_to_anchor=(1.5, 1))
 
+    fig.suptitle(f"MW complex envelopes for {loop_label}")
+    fig.tight_layout()
+
     return (fig, axes)
+
+
+def plot_rf_lab_tones(
+    time_us: np.ndarray,
+    tone_1: np.ndarray,
+    tone_2: np.ndarray,
+):
+    """Plot the two RF laboratory-frame carrier tones used for dressing."""
+    fig, axis = plt.subplots(figsize=(10, 4))
+    axis.plot(time_us, tone_1, alpha=0.65, color="#D62828", label=r"$x_-\leftrightarrow x_0$")
+    axis.plot(time_us, tone_2, alpha=0.65, color="#1f77b4", label=r"$x_0\leftrightarrow x_+$")
+    axis.set(
+        xlabel=r"Time $[\mu s]$",
+        ylabel="RF coefficient (MHz)",
+        title="Two-tone laboratory RF dressing pulse",
+    )
+    axis.legend()
+    fig.tight_layout()
+    return fig, axis
+
+def plot_envelopes(
+    SIMULATION_PARAMETERS: Mapping[str, Any],
+):
+    """Plot RF and representative MW envelopes from the shared parameters.
+
+    Parameters
+    ----------
+    SIMULATION_PARAMETERS
+        Parameter dictionary created by ``create_simulation_parameters``.
+
+    Returns
+    -------
+    tuple
+        ``(figure, axes)`` for the magnitude, real, and imaginary panels.
+    """
+    from simulation.envelope import mw_loop_sequence_envelope, rf_envelope
+
+    time_us = np.asarray(SIMULATION_PARAMETERS["SIMULATION_TIME"])
+    rf_values = np.asarray(rf_envelope(time_us, SIMULATION_PARAMETERS))
+    mw_values = (
+        mw_loop_sequence_envelope(time_us, SIMULATION_PARAMETERS, "1", "1"),
+        mw_loop_sequence_envelope(time_us, SIMULATION_PARAMETERS, "const", "2"),
+        mw_loop_sequence_envelope(time_us, SIMULATION_PARAMETERS, "const", "3"),
+    )
+    colors = ("#D62828", "#F77F00", "#F4A261")
+    fig, axes = plt.subplots(1, 3, figsize=(15, 6), sharey=False)
+
+    axes[0].plot(time_us, np.abs(rf_values), color="#1f77b4", label="RF envelope")
+    axes[1].plot(time_us, np.real(rf_values), color="#1f77b4", label="RF real")
+    axes[2].plot(time_us, np.imag(rf_values), color="#1f77b4", label="RF imaginary")
+    for index, (values, color) in enumerate(zip(mw_values, colors), start=1):
+        axes[0].plot(time_us, np.abs(values), color=color, label=f"MW {index} magnitude")
+        axes[1].plot(time_us, np.real(values), color=color, label=f"MW {index} real")
+        axes[2].plot(time_us, np.imag(values), color=color, label=f"MW {index} imaginary")
+
+    ramp_starts = (
+        SIMULATION_PARAMETERS["t_mw1_ramp_start_us"],
+        SIMULATION_PARAMETERS["t_mw2_ramp_start_us"],
+        SIMULATION_PARAMETERS["t_mw3_ramp_start_us"],
+    )
+    ramp_ends = np.asarray(SIMULATION_PARAMETERS["t_mw_ramp_end_us"])
+    for axis in axes:
+        for start, end, color in zip(ramp_starts, ramp_ends, colors):
+            axis.axvline(start, color=color, linestyle="--", alpha=0.45)
+            axis.axvline(end, color=color, linestyle="--", alpha=0.45)
+        axis.set_xlabel(r"Time $[\mu s]$")
+        axis.legend(fontsize=8)
+    axes[0].set(title="MW & RF envelope magnitudes", ylabel="Amplitude")
+    axes[1].set(title="Envelope real components")
+    axes[2].set(title="Envelope imaginary components")
+    fig.tight_layout()
+    return fig, axes
+
+
+def plot_loop_population_comparison(
+    experiments: Mapping[str, Any],
+    SIMULATION_PARAMETERS: Mapping[str, Any],
+    population_labels: Sequence[str],
+):
+    """Reproduce the three-loop-order population comparison figure."""
+    time_us = np.asarray(SIMULATION_PARAMETERS["SIMULATION_TIME"])
+    loop_labels = {
+        "C1C2": r"C1$\rightarrow$C2",
+        "C2C1": r"C2$\rightarrow$C1",
+        "no_loops": "No Loops",
+    }
+    cool_colors = ("#1f77b4", "#17becf", "#2a9d8f", "#6a4c93")
+    warm_lines = ("#E76F51", "#F4A261", "#D62828", "#F77F00")
+    event_times = (
+        SIMULATION_PARAMETERS["t_rf_ramp_start_us"],
+        SIMULATION_PARAMETERS["t_loop_1_start_us"],
+        SIMULATION_PARAMETERS["t_loop_2_start_us"],
+        SIMULATION_PARAMETERS["t_mw_ramp_down_start_us"],
+        SIMULATION_PARAMETERS["t_rf_ramp_down_start_us"],
+        SIMULATION_PARAMETERS["TOTAL_TIME_US"],
+    )
+
+    fig, axes = plt.subplots(3, 2, figsize=(15, 12), sharex=True)
+    for row, key in enumerate(("C1C2", "C2C1", "no_loops")):
+        results = experiments[key].results
+        for index, color in enumerate(cool_colors):
+            axes[row, 0].plot(
+                time_us,
+                results[index],
+                color=color,
+                alpha=0.85,
+                label=population_labels[index],
+            )
+        axes[row, 0].set(
+            ylabel="Population",
+            title=f"Individual tripod populations: {loop_labels[key]}",
+        )
+        axes[row, 0].legend(loc="center left", bbox_to_anchor=(1.01, 0.5))
+
+        all_ground = results[0] + results[1] + results[2]
+        all_excited = results[5] - all_ground
+        plus_population = results[6] - results[5]
+        aggregate = (
+            (results[5], population_labels[5], "#457b9d"),
+            (plus_population, r"$P_S$", "#00b4d8"),
+            (all_excited, r"$P_E$", "#5e60ce"),
+            (all_ground, r"$P_G$", "#2a9d8f"),
+            (results[6], population_labels[6], "#3a0ca3"),
+        )
+        for values, label, color in aggregate:
+            axes[row, 1].plot(time_us, values, color=color, alpha=0.85, label=label)
+        axes[row, 1].set(
+            ylabel="Population",
+            title=f"Aggregate manifold populations: {loop_labels[key]}",
+        )
+        axes[row, 1].legend(loc="center left", bbox_to_anchor=(1.01, 0.5))
+
+        for axis in axes[row]:
+            for index, event_time in enumerate(event_times):
+                axis.axvline(
+                    event_time,
+                    color=warm_lines[min(index, len(warm_lines) - 1)],
+                    linestyle="--",
+                    alpha=0.55,
+                )
+            axis.set_ylim(-0.02, 1.02)
+            axis.set_xlabel(r"Time $[\mu s]$")
+    fig.tight_layout()
+    return fig, axes
+
+
+def plot_coherence_phase_grid(
+    experiment: Any,
+    states: Sequence[Any],
+    state_labels: Sequence[str],
+    reference_state: Any,
+    SIMULATION_PARAMETERS: Mapping[str, Any],
+    coherence_threshold: float = 1e-8,
+):
+    """Plot density-matrix coherence phases relative to one reference state.
+
+    Phases are masked when the normalized coherence is below
+    ``coherence_threshold`` so zero-coherence numerical phases are not shown as
+    physical information.
+    """
+    time_us = np.asarray(SIMULATION_PARAMETERS["SIMULATION_TIME"])
+    fig, axes = plt.subplots(3, 3, sharex=True, figsize=(10, 8))
+    reference_projector = reference_state * reference_state.dag()
+
+    for index, (axis, state, label) in enumerate(
+        zip(axes.flat, states, state_labels)
+    ):
+        state_projector = state * state.dag()
+        coherences = np.array(
+            [complex(reference_state.dag() * rho * state) for rho in experiment.rho]
+        )
+        reference_population = np.array(
+            [np.real((rho * reference_projector).tr()) for rho in experiment.rho]
+        )
+        state_population = np.array(
+            [np.real((rho * state_projector).tr()) for rho in experiment.rho]
+        )
+        denominator = np.sqrt(np.maximum(reference_population * state_population, 0.0))
+        normalized_magnitude = np.divide(
+            np.abs(coherences),
+            denominator,
+            out=np.zeros_like(denominator),
+            where=denominator > 1e-14,
+        )
+        phases = np.mod(np.angle(coherences), 2.0 * np.pi)
+        phases[normalized_magnitude < coherence_threshold] = np.nan
+        axis.plot(time_us, phases, color="tab:purple")
+        axis.set(title=label, ylabel="Phase [rad]")
+        axis.grid(True, linestyle="--", color="gray", alpha=0.4)
+        if index >= 6:
+            axis.set_xlabel(r"Time $[\mu s]$")
+    fig.suptitle(r"Density-matrix coherence phases relative to $|g_-\rangle$")
+    fig.tight_layout()
+    return fig, axes
+
+
+def plot_final_population_comparison(
+    state_labels: Sequence[str],
+    initial_populations: np.ndarray,
+    final_populations: Mapping[str, np.ndarray],
+    verbosity: bool = False,
+):
+    """Plot the initial and final nine-state populations and differences."""
+    labels = ("C1C2", "C2C1", "no_loops")
+    display_labels = ("C1C2", "C2C1", "No Loops")
+    colors = ("#D62828", "#1f77b4", "#2a9d8f")
+    x = np.arange(len(state_labels), dtype=float)
+    width = 0.18
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+
+    axes[0, 0].bar(x - 1.5 * width, initial_populations, width, color="gray", label="Initial")
+    for index, (key, label, color) in enumerate(zip(labels, display_labels, colors)):
+        axes[0, 0].bar(
+            x + (index - 0.5) * width,
+            final_populations[key],
+            width,
+            color=color,
+            label=label,
+        )
+        axes[0, 1].bar(
+            x + (index - 1) * width,
+            initial_populations - final_populations[key],
+            width,
+            color=color,
+            label=label,
+        )
+    axes[1, 0].bar(
+        x,
+        final_populations["C1C2"] - final_populations["C2C1"],
+        color="#6a4c93",
+    )
+    axes[1, 1].bar(
+        x - width / 2,
+        final_populations["no_loops"] - final_populations["C1C2"],
+        width,
+        color=colors[0],
+        label="No Loops - C1C2",
+    )
+    axes[1, 1].bar(
+        x + width / 2,
+        final_populations["no_loops"] - final_populations["C2C1"],
+        width,
+        color=colors[1],
+        label="No Loops - C2C1",
+    )
+    titles = (
+        "Final state populations",
+        "Population changes from initial",
+        "C1C2 - C2C1 final populations",
+        "Loop differences from no-loop result",
+    )
+    for axis, title in zip(axes.flat, titles):
+        axis.set_xticks(x, state_labels, rotation=45, ha="right")
+        axis.set(title=title, ylabel="Population")
+        axis.axhline(0.0, color="black", linewidth=0.8)
+    axes[0, 0].legend()
+    axes[0, 1].legend()
+    axes[1, 1].legend()
+    fig.tight_layout()
+
+    if verbosity:
+        for key, label in zip(labels, display_labels):
+            values = final_populations[key]
+            print(f"Final populations for {label}:\n{values}")
+            print(f"  Sum: {np.sum(values):.12f}")
+        print(
+            "C1C2 - C2C1 final population difference:\n",
+            final_populations["C1C2"] - final_populations["C2C1"],
+        )
+    return fig, axes
